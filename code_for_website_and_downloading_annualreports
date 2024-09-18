@@ -1,0 +1,106 @@
+import requests
+import pandas as pd
+from urllib.parse import urlparse
+from bs4 import BeautifulSoup as bs
+
+# Constants for Google Custom Search API
+API_KEY = ''  # Your Google Custom Search API key
+CSE_ID = ''  # Your Custom Search Engine ID
+
+# Function to get the official website of a company
+def get_official_website(company_name):
+    search_url = "https://www.googleapis.com/customsearch/v1"
+    params = {
+        'key': API_KEY,
+        'cx': CSE_ID,
+        'q': company_name + " official website",
+        'num': 5
+    }
+    
+    excluded_domains = ["bloomberg.com", "linkedin.com", "bulton.com", "dnb.com", "angleadvisors.com", "delrisco.com"]
+
+    try:
+        response = requests.get(search_url, params=params)
+        response.raise_for_status()
+        results = response.json()
+
+        if 'items' in results and len(results['items']) > 0:
+            for item in results['items']:
+                official_url = item.get('link', 'No URL found')
+                if not any(domain in official_url for domain in excluded_domains):
+                    return official_url
+        return None
+    except requests.RequestException as e:
+        print(f"Error fetching results for {company_name}: {e}")
+        return None
+
+# Function to get the report URL of a company
+def get_report_url(company_name, year):
+    search_url = "https://www.googleapis.com/customsearch/v1"
+    query = f"{company_name} annual report {year} filetype:pdf"
+    params = {
+        'key': API_KEY,
+        'cx': CSE_ID,
+        'q': query,
+        'num': 5
+    }
+
+    excluded_domains = ["bloomberg.com", "linkedin.com", "bulton.com", "dnb.com", "angleadvisors.com", "delrisco.com"]
+
+    try:
+        response = requests.get(search_url, params=params)
+        response.raise_for_status()
+        results = response.json()
+
+        if 'items' in results and len(results['items']) > 0:
+            for item in results['items']:
+                report_url = item.get('link', 'No URL found')
+                if not any(domain in report_url for domain in excluded_domains):
+                    return report_url
+        return None
+    except requests.RequestException as e:
+        print(f"Error fetching report for {company_name}: {e}")
+        return None
+
+# Function to download a PDF from a given URL
+def download_pdf(url, output_file_path):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+
+        with open(output_file_path, 'wb') as file:
+            file.write(response.content)
+        print(f"PDF downloaded successfully and saved as {output_file_path}")
+    except requests.RequestException as e:
+        print(f"Error downloading the PDF: {e}")
+
+# Main function to process the Excel file and perform the combined task
+def process_companies(file_path, output_file):
+    df = pd.read_excel(file_path)
+    results = []
+
+    for index, row in df.iterrows():
+        company_name = row[0]
+        website = get_official_website(company_name)
+        
+        if website:
+            report_url = get_report_url(company_name, 2023)
+            if report_url:
+                output_file_name = f"{company_name}_2023_annual_report.pdf"
+                download_pdf(report_url, output_file_name)
+                results.append([company_name, website, "YES"])
+            else:
+                results.append([company_name, website, "NO"])
+        else:
+            results.append([company_name, "No website found", "NO"])
+
+    result_df = pd.DataFrame(results, columns=['Company Name', 'Website', 'Annual Report Found'])
+    result_df.to_excel(output_file, index=False)
+
+    print(f"Results saved to {output_file}")
+
+# Entry point of the script
+if __name__ == "__main__":
+    input_file = "input_companies.xlsx"  # Replace with your actual input file path
+    output_file = "output_report.xlsx"  # Replace with your desired output file path
+    process_companies(input_file, output_file)
